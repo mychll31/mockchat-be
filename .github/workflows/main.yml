@@ -1,0 +1,54 @@
+name: 🚀 Deploy to DigitalOcean Server 1
+
+on:
+  push:
+    branches:
+      - master
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DO1_SSH_PRIVATE_KEY }}
+
+      - name: 🚀 Deploy to Production
+        if: github.ref == 'refs/heads/master'
+        run: |
+          echo "Starting production deployment..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DO1_SERVER_USER }}@${{ secrets.DO1_SERVER_HOST }} << 'EOF'
+            cd ~/server/apps/mockchat/mockchat-be/src
+            echo "📥 Pulling latest code..."
+            git pull
+
+            cd ..
+            echo "🧹 Restarting Docker containers..."
+            docker-compose build
+            docker-compose up -d
+
+            echo "✅ Production deployment complete!"
+          EOF
+
+      - name: 🚀 Deploy to Staging
+        if: github.ref == 'refs/heads/staging'
+        run: |
+          echo "Starting staging deployment..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DO1_SERVER_USER }}@${{ secrets.DO1_SERVER_HOST }} << 'EOF'
+            cd ~/server/apps/mockchat/mockchat-be/src
+            echo "📥 Pulling latest code..."
+            git pull
+
+            cd ..
+            echo "🧹 Restarting Docker containers..."
+            docker-compose down
+            docker-compose up -d --build
+
+            echo "✅ Staging deployment complete!"
+          EOF
