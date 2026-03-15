@@ -7,28 +7,30 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Chat service using local Ollama (Llama 3 / 3.1).
- * Run: ollama run llama3.1 (or llama3) then set CHAT_PROVIDER=ollama.
+ * Chat service using Google Gemini API.
+ * Set GEMINI_API_KEY in .env.
  */
-class OllamaChatService implements ChatServiceInterface
+class GeminiChatService implements ChatServiceInterface
 {
-    protected string $baseUrl;
+    protected string $apiKey;
 
-    protected string $model = 'llama3.1';
+    protected string $model = 'gemini-2.0-flash';
 
-    public function __construct(?string $baseUrl = null)
+    protected string $baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+
+    public function __construct(?string $apiKey = null)
     {
-        $this->baseUrl = rtrim($baseUrl ?? config('services.ollama.url', 'http://localhost:11434'), '/');
+        $key = $apiKey ?? config('services.gemini.key') ?? '';
+        $this->apiKey = is_string($key) ? $key : '';
     }
 
     public function getCustomerOpener(string $typeKey, string $customerName, ?string $productContext = null): string
     {
         $personality = $this->getPersonalityPrompt($typeKey);
         $productInfo = $productContext ? " The customer is inquiring about: {$productContext}." : '';
-        $system = "You are a Filipino customer in a chat with a sales/support agent. Your role: {$personality}.{$productInfo} Reply ONLY with the customer's first message in Tagalog (1-2 sentences). No quotes or labels.";
-        $response = $this->chat([
-            ['role' => 'system', 'content' => $system],
-            ['role' => 'user', 'content' => 'Start the conversation as the customer. Send only the opening message.'],
+        $systemInstruction = "You are a Filipino customer in a chat with a sales/support agent. Your role: {$personality}.{$productInfo} Reply ONLY with the customer's first message in Tagalog (1-2 sentences). No quotes or labels.";
+        $response = $this->chat($systemInstruction, [
+            ['role' => 'user', 'parts' => [['text' => 'Start the conversation as the customer. Send only the opening message.']]],
         ]);
         return $this->trimResponse($response);
     }
@@ -38,14 +40,19 @@ class OllamaChatService implements ChatServiceInterface
         $personality = $this->getPersonalityPrompt($typeKey);
         $productInfo = $productContext ? " The conversation is about: {$productContext}." : '';
         $stageInstructions = "The agent should follow this flow: 1) Greeting/Rapport 2) Probing 3) Empathize 4) Solution 5) Value 6) Offer/Close 7) Confirmation. Respond as the customer would naturally at this point in the conversation.";
-        $system = "You are a Filipino customer. Your name: {$customerName}. {$personality}.{$productInfo} {$stageInstructions}. Reply ONLY in Tagalog, 1-3 short sentences. Stay in character. No quotes or 'Customer:' prefix.";
-        $messages = [['role' => 'system', 'content' => $system]];
+        $systemInstruction = "You are a Filipino customer. Your name: {$customerName}. {$personality}.{$productInfo} {$stageInstructions}. Reply ONLY in Tagalog, 1-3 short sentences. Stay in character. No quotes or 'Customer:' prefix.";
+
+        $contents = [];
         foreach ($messageHistory as $m) {
-            $role = $m['sender'] === 'agent' ? 'user' : 'assistant';
-            $messages[] = ['role' => $role, 'content' => $m['body']];
+            $role = $m['sender'] === 'agent' ? 'user' : 'model';
+            $contents[] = ['role' => $role, 'parts' => [['text' => $m['body']]]];
         }
-        $messages[] = ['role' => 'user', 'content' => $agentMessage];
-        $response = $this->chat($messages);
+        $contents[] = ['role' => 'user', 'parts' => [['text' => $agentMessage]]];
+
+        // Gemini requires alternating user/model and must start with user
+        $contents = $this->normalizeContents($contents);
+
+        $response = $this->chat($systemInstruction, $contents);
         return $this->trimResponse($response);
     }
 
@@ -69,38 +76,82 @@ class OllamaChatService implements ChatServiceInterface
         };
     }
 
-    protected function chat(array $messages): string
+    /**
+     * Ensure contents alternate between user and model, starting with user.
+     */
+    protected function normalizeContents(array $contents): array
     {
+        if (empty($contents)) {
+            return [['role' => 'user', 'parts' => [['text' => 'Hello']]]];
+        }
+
+        $normalized = [];
+        $lastRole = null;
+
+        foreach ($contents as $content) {
+            if ($content['role'] === $lastRole) {
+                // Merge consecutive same-role messages
+                $lastIndex = count($normalized) - 1;
+                $existingText = $normalized[$lastIndex]['parts'][0]['text'] ?? '';
+                $newText = $content['parts'][0]['text'] ?? '';
+                $normalized[$lastIndex]['parts'] = [['text' => $existingText . "\n" . $newText]];
+            } else {
+                $normalized[] = $content;
+                $lastRole = $content['role'];
+            }
+        }
+
+        // Ensure first message is from user
+        if ($normalized[0]['role'] !== 'user') {
+            array_unshift($normalized, ['role' => 'user', 'parts' => [['text' => 'Hello']]]);
+        }
+
+        return $normalized;
+    }
+
+    protected function chat(string $systemInstruction, array $contents): string
+    {
+        if (empty($this->apiKey)) {
+            Log::warning('Gemini API key is missing. Set GEMINI_API_KEY in .env.');
+            throw new \RuntimeException('[Gemini] Walang API key. I-set ang API key sa Settings page.');
+        }
+
         try {
-            $response = Http::timeout(60)
-                ->post("{$this->baseUrl}/api/chat", [
-                    'model' => $this->model,
-                    'messages' => $messages,
-                    'stream' => false,
-                    'options' => [
+            $url = "{$this->baseUrl}/models/{$this->model}:generateContent?key={$this->apiKey}";
+
+            $response = Http::timeout(30)
+                ->post($url, [
+                    'system_instruction' => [
+                        'parts' => [['text' => $systemInstruction]],
+                    ],
+                    'contents' => $contents,
+                    'generationConfig' => [
+                        'maxOutputTokens' => 150,
                         'temperature' => 0.8,
-                        'num_predict' => 150,
                     ],
                 ]);
 
             if (! $response->successful()) {
-                Log::warning('Ollama API error', [
+                $errorBody = $response->json();
+                $errorMsg = $errorBody['error']['message'] ?? $response->body();
+                $errorStatus = $errorBody['error']['status'] ?? 'unknown';
+                Log::warning('Gemini API error', [
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
-                throw new \RuntimeException('[Ollama] API error: ' . ($response->body() ?: 'Hindi ma-reach ang Ollama. Siguraduhing tumatakbo ito.'));
+                throw new \RuntimeException("[Gemini] {$errorStatus}: {$errorMsg}");
             }
 
-            $content = $response->json('message.content');
+            $content = $response->json('candidates.0.content.parts.0.text');
             return is_string($content) ? $content : $this->fallbackResponse();
         } catch (\RuntimeException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            Log::error('Ollama request failed', [
+            Log::error('Gemini request failed', [
                 'message' => $e->getMessage(),
                 'exception' => get_class($e),
             ]);
-            throw new \RuntimeException('[Ollama] Hindi ma-contact: ' . $e->getMessage() . '. Siguraduhing naka-run ang Ollama (ollama serve).');
+            throw new \RuntimeException('[Gemini] Hindi ma-contact ang API: ' . $e->getMessage());
         }
     }
 

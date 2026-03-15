@@ -6,7 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\CustomerType;
 use App\Models\Message;
+use App\Models\Product;
+use App\Models\UserLlmSetting;
 use App\Contracts\ChatServiceInterface;
+use App\Services\AnthropicChatService;
+use App\Services\GeminiChatService;
+use App\Services\GroqChatService;
+use App\Services\OllamaChatService;
+use App\Services\OpenAIChatService;
 use App\Services\ChatStageDetection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,6 +26,16 @@ class ChatController extends Controller
         'normal_buyer' => ['Sarah M.', 'James K.', 'Emily R.', 'David L.', 'Lisa T.', 'Mike P.'],
         'irate_returner' => ['Karen W.', 'Robert S.', 'Patricia H.', 'Mark D.', 'Angela C.', 'Tom B.'],
         'irate_annoyed' => ['Gary N.', 'Brenda F.', 'Steve Q.', 'Diane J.', 'Kevin O.', 'Nancy E.'],
+        'confused' => ['Ana G.', 'Rico M.', 'Celia P.', 'Jun B.', 'Mara S.', 'Ben T.'],
+        'impatient' => ['Carlos R.', 'Tina L.', 'Eddie V.', 'Rose D.', 'Alex N.', 'Joy H.'],
+        'friendly' => ['Maria C.', 'Ramon A.', 'Liza F.', 'Danny O.', 'Grace W.', 'Paolo J.'],
+        'skeptical' => ['Andres K.', 'Nina R.', 'Oscar M.', 'Beth S.', 'Ray T.', 'Alma D.'],
+        'demanding' => ['Victoria L.', 'Francis G.', 'Cristina H.', 'Marco P.', 'Irene B.', 'Leo V.'],
+        'indecisive' => ['Jenny M.', 'Rodel C.', 'Tess A.', 'Noel F.', 'Bea K.', 'Sam Q.'],
+        'bargain_hunter' => ['Manny D.', 'Luz R.', 'Tony S.', 'Cora P.', 'Rudy L.', 'Pia M.'],
+        'loyal' => ['Elena J.', 'Roberto N.', 'Susie T.', 'Joel A.', 'Aida G.', 'Dante F.'],
+        'first_time_buyer' => ['Jasmine B.', 'Gerald H.', 'Cherry V.', 'Dennis K.', 'Mila S.', 'Ian R.'],
+        'silent' => ['Pete C.', 'Nora D.', 'Vic M.', 'Faye L.', 'Art P.', 'Gina T.'],
     ];
 
     public function __construct(ChatServiceInterface $chat)
@@ -26,7 +43,7 @@ class ChatController extends Controller
         $this->chat = $chat;
     }
 
-    public function newConversation(): JsonResponse
+    public function newConversation(Request $request): JsonResponse
     {
         try {
             $type = CustomerType::inRandomOrder()->first();
@@ -37,13 +54,24 @@ class ChatController extends Controller
             $names = $this->customerNames[$type->type_key] ?? ['Customer'];
             $customerName = $names[array_rand($names)];
 
+            $productId = $request->input('product_id');
+            $productContext = null;
+            if ($productId) {
+                $product = Product::find($productId);
+                if ($product) {
+                    $productContext = "{$product->name} - {$product->description} (Price: PHP " . number_format((float) $product->price, 2) . ")";
+                }
+            }
+
             $conversation = Conversation::create([
                 'customer_type_id' => $type->id,
+                'product_id' => $productId,
                 'customer_name' => $customerName,
                 'status' => 'active',
             ]);
 
-            $opener = $this->chat->getCustomerOpener($type->type_key, $customerName);
+            $chatService = $this->resolveChatService($request);
+            $opener = $chatService->getCustomerOpener($type->type_key, $customerName, $productContext);
 
             Message::create([
                 'conversation_id' => $conversation->id,
@@ -57,6 +85,7 @@ class ChatController extends Controller
                 'customer_type' => $type->label,
                 'type_key' => $type->type_key,
                 'opener' => $opener,
+                'product_id' => $productId,
             ]);
         } catch (\Throwable $e) {
             return response()->json(['error' => $e->getMessage()], 500);
@@ -70,7 +99,7 @@ class ChatController extends Controller
             'message' => 'required|string|max:2000',
         ]);
 
-        $conversation = Conversation::with('customerType')
+        $conversation = Conversation::with(['customerType', 'product'])
             ->where('id', $request->conversation_id)
             ->where('status', 'active')
             ->first();
@@ -91,12 +120,24 @@ class ChatController extends Controller
             ->map(fn ($m) => ['sender' => $m->sender, 'body' => $m->body])
             ->toArray();
 
-        $reply = $this->chat->getCustomerReply(
-            $conversation->customerType->type_key,
-            $conversation->customer_name,
-            $history,
-            $body
-        );
+        $productContext = null;
+        if ($conversation->product) {
+            $product = $conversation->product;
+            $productContext = "{$product->name} - {$product->description} (Price: PHP " . number_format((float) $product->price, 2) . ")";
+        }
+
+        try {
+            $chatService = $this->resolveChatService($request);
+            $reply = $chatService->getCustomerReply(
+                $conversation->customerType->type_key,
+                $conversation->customer_name,
+                $history,
+                $body,
+                $productContext
+            );
+        } catch (\Throwable $e) {
+            return response()->json(['error' => $e->getMessage()], 502);
+        }
 
         Message::create([
             'conversation_id' => $conversation->id,
@@ -141,6 +182,7 @@ class ChatController extends Controller
                 'status' => $conversation->status,
                 'customer_type' => $conversation->customerType->label,
                 'type_key' => $conversation->customerType->type_key,
+                'product_id' => $conversation->product_id,
             ],
         ]);
     }
@@ -170,5 +212,35 @@ class ChatController extends Controller
             'total_agent_messages' => $agentMessages,
             'by_type' => $byType,
         ]);
+    }
+
+    /**
+     * Resolve the chat service, optionally overriding with a request-level provider.
+     */
+    protected function resolveChatService(Request $request): ChatServiceInterface
+    {
+        $provider = $request->input('provider');
+
+        if (!$provider) {
+            return $this->chat;
+        }
+
+        $userId = (int) $request->input('user_id', 1);
+
+        // Look up user's stored API key for the requested provider
+        $setting = UserLlmSetting::where('user_id', $userId)
+            ->where('provider', $provider)
+            ->first();
+
+        $apiKey = $setting?->api_key;
+
+        return match ($provider) {
+            'openai' => new OpenAIChatService($apiKey),
+            'anthropic' => new AnthropicChatService($apiKey),
+            'gemini' => new GeminiChatService($apiKey),
+            'groq' => new GroqChatService($apiKey),
+            'ollama' => new OllamaChatService($setting?->model),
+            default => $this->chat,
+        };
     }
 }

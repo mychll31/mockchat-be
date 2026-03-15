@@ -39,9 +39,17 @@ return [
         'key' => env('OPENAI_API_KEY'),
     ],
 
+    'anthropic' => [
+        'key' => env('ANTHROPIC_API_KEY'),
+    ],
+
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+    ],
+
     /*
     |--------------------------------------------------------------------------
-    | Chat AI provider: openai | groq | ollama
+    | Chat AI provider: openai | anthropic | gemini | groq | ollama
     |--------------------------------------------------------------------------
     | groq = Llama 3.1 via Groq (free tier at https://console.groq.com)
     | ollama = Local Llama via Ollama (run: ollama run llama3.1)
