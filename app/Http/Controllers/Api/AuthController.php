@@ -11,29 +11,22 @@ use Laravel\Socialite\Facades\Socialite;
 class AuthController extends Controller
 {
     /**
-     * Returns the Google OAuth redirect URL (for web frontend) or redirects the browser
-     * directly to Google (for mobile — when redirect_scheme is present).
+     * Redirects the browser to Google's OAuth consent screen.
+     * Web: browser navigates here directly (no fetch — no CORS).
+     * Mobile: pass ?redirect_scheme=mockchat to deep-link back after auth.
      */
     public function redirectUrl(Request $request)
     {
         $scheme = $request->query('redirect_scheme');
 
+        $driver = Socialite::driver('google')->stateless();
+
         if ($scheme) {
-            // Mobile flow: store the scheme in the state so the callback can redirect back
-            // We pass it via `with()` (extra query params that survive the redirect)
-            return Socialite::driver('google')
-                ->stateless()
-                ->with(['state' => urlencode($scheme)])
-                ->redirect();
+            // Encode the mobile scheme into OAuth state so callback can redirect back
+            $driver = $driver->with(['state' => urlencode($scheme)]);
         }
 
-        // Web flow: just return the URL for the SPA to redirect
-        $url = Socialite::driver('google')
-            ->stateless()
-            ->redirect()
-            ->getTargetUrl();
-
-        return response()->json(['url' => $url]);
+        return $driver->redirect();
     }
 
     /**
@@ -82,15 +75,16 @@ class AuthController extends Controller
             );
         }
 
-        return response()->json([
-            'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'avatar' => $user->avatar,
-            ],
-        ]);
+        // Web flow: redirect to SPA callback page with token in query string
+        $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
+
+        return redirect()->away(
+            $frontendUrl . '/auth/callback?token=' . urlencode($token)
+            . '&user_id=' . $user->id
+            . '&name=' . urlencode($user->name)
+            . '&email=' . urlencode($user->email ?? '')
+            . '&avatar=' . urlencode($user->avatar ?? '')
+        );
     }
 
     /**
