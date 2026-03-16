@@ -30,7 +30,7 @@ class LlmSettingsController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $userId = (int) $request->query('user_id', 1);
+        $userId = $request->user()->id;
 
         $settings = UserLlmSetting::where('user_id', $userId)
             ->get()
@@ -57,7 +57,7 @@ class LlmSettingsController extends Controller
             'user_id' => 'nullable|integer',
         ]);
 
-        $userId = $request->input('user_id', 1);
+        $userId = $request->user()->id;
 
         // If setting as default, unset other defaults for this user
         if ($request->boolean('is_default')) {
@@ -94,7 +94,7 @@ class LlmSettingsController extends Controller
 
     public function destroy(Request $request, string $provider): JsonResponse
     {
-        $userId = (int) $request->query('user_id', 1);
+        $userId = $request->user()->id;
 
         $deleted = UserLlmSetting::where('user_id', $userId)
             ->where('provider', $provider)

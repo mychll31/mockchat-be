@@ -14,13 +14,8 @@ class ProductController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Product::query();
-
-        if ($request->has('user_id')) {
-            $query->where('user_id', (int) $request->query('user_id'));
-        }
-
-        $products = $query->orderBy('created_at', 'desc')->get();
+        $userId = $request->user()->id;
+        $products = Product::where('user_id', $userId)->orderBy('created_at', 'desc')->get();
 
         return response()->json([
             'products' => ProductResource::collection($products),
@@ -30,7 +25,7 @@ class ProductController extends Controller
     public function store(StoreProductRequest $request): JsonResponse
     {
         $product = Product::create([
-            'user_id' => $request->input('user_id', 1),
+            'user_id' => $request->user()->id,
             'name' => $request->input('name'),
             'description' => $request->input('description'),
             'price' => $request->input('price'),

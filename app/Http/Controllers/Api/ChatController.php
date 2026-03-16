@@ -225,7 +225,7 @@ class ChatController extends Controller
             return $this->chat;
         }
 
-        $userId = (int) $request->input('user_id', 1);
+        $userId = $request->user()->id;
 
         // Look up user's stored API key for the requested provider
         $setting = UserLlmSetting::where('user_id', $userId)
