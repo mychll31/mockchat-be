@@ -64,6 +64,7 @@ class ChatController extends Controller
             }
 
             $conversation = Conversation::create([
+                'user_id' => $request->user()?->id,
                 'customer_type_id' => $type->id,
                 'product_id' => $productId,
                 'customer_name' => $customerName,

@@ -3,13 +3,66 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Laravel\Socialite\Facades\Socialite;
 
 class AuthController extends Controller
 {
+    /**
+     * Register a new user with email and password.
+     */
+    public function register(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name'                  => 'required|string|max:255',
+            'email'                 => 'required|string|email|max:255|unique:users',
+            'password'              => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = User::create([
+            'name'     => $validated['name'],
+            'email'    => $validated['email'],
+            'password' => $validated['password'],
+        ]);
+
+        $token = $user->createToken('auth-token')->plainTextToken;
+
+        return response()->json([
+            'token' => $token,
+            'user'  => UserResource::make($user)->resolve(),
+        ], 201);
+    }
+
+    /**
+     * Authenticate a user with email and password.
+     */
+    public function login(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email'    => 'required|string|email',
+            'password' => 'required|string',
+        ]);
+
+        $user = User::where('email', $validated['email'])->first();
+
+        if (! $user || ! Hash::check($validated['password'], $user->password)) {
+            return response()->json(['error' => 'Invalid email or password.'], 401);
+        }
+
+        // Revoke old tokens and issue a fresh one
+        $user->tokens()->delete();
+        $token = $user->createToken('auth-token')->plainTextToken;
+
+        return response()->json([
+            'token' => $token,
+            'user'  => UserResource::make($user)->resolve(),
+        ]);
+    }
+
     /**
      * Redirects the browser to Google's OAuth consent screen.
      * Web: browser navigates here directly (no fetch — no CORS).
@@ -84,6 +137,7 @@ class AuthController extends Controller
             . '&name=' . urlencode($user->name)
             . '&email=' . urlencode($user->email ?? '')
             . '&avatar=' . urlencode($user->avatar ?? '')
+            . '&role=' . urlencode($user->role ?? 'student')
         );
     }
 
@@ -94,14 +148,7 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
-        return response()->json([
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'avatar' => $user->avatar,
-            ],
-        ]);
+        return response()->json(['user' => UserResource::make($user)->resolve()]);
     }
 
     /**

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Conversation extends Model
 {
-    protected $fillable = ['customer_type_id', 'product_id', 'customer_name', 'status'];
+    protected $fillable = ['user_id', 'customer_type_id', 'product_id', 'customer_name', 'status'];
 
     protected $casts = [
         'updated_at' => 'datetime',
