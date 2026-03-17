@@ -52,4 +52,14 @@ class User extends Authenticatable
     {
         return $this->hasMany(UserLlmSetting::class);
     }
+
+    public function campaigns(): HasMany
+    {
+        return $this->hasMany(Campaign::class, 'created_by');
+    }
+
+    public function campaignAssignments(): HasMany
+    {
+        return $this->hasMany(CampaignAssignment::class, 'student_id');
+    }
 }

@@ -149,10 +149,17 @@ class ChatController extends Controller
         $agentBodies = $conversation->messages()->where('sender', 'agent')->orderBy('created_at')->pluck('body')->toArray();
         $suggestedStage = ChatStageDetection::fromAgentMessages($agentBodies);
 
+        $autoEnded = false;
+        if ($suggestedStage >= 7) {
+            $conversation->update(['status' => 'closed']);
+            $autoEnded = true;
+        }
+
         return response()->json([
             'agent_message' => $body,
             'customer_response' => $reply,
             'suggested_stage' => $suggestedStage,
+            'auto_ended' => $autoEnded,
         ]);
     }
 
@@ -213,6 +220,29 @@ class ChatController extends Controller
             'total_agent_messages' => $agentMessages,
             'by_type' => $byType,
         ]);
+    }
+
+    public function getMyConversations(Request $request): JsonResponse
+    {
+        $conversations = Conversation::where('user_id', $request->user()->id)
+            ->with('customerType:id,label,type_key')
+            ->withCount('messages')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($conv) {
+                return [
+                    'id' => $conv->id,
+                    'customer_name' => $conv->customer_name,
+                    'customer_type' => $conv->customerType?->label ?? $conv->customerType?->type_key ?? 'Unknown',
+                    'status' => $conv->status,
+                    'mentor_feedback' => $conv->mentor_feedback,
+                    'mentor_score' => $conv->mentor_score,
+                    'message_count' => $conv->messages_count,
+                    'created_at' => $conv->created_at,
+                ];
+            });
+
+        return response()->json($conversations);
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ProductResource;
 use App\Http\Resources\UserResource;
+use App\Models\Conversation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -81,11 +82,13 @@ class UserController extends Controller
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(fn ($c) => [
-                'id'            => $c->id,
-                'customer_name' => $c->customer_name,
-                'customer_type' => $c->customerType?->label,
-                'status'        => $c->status,
-                'created_at'    => $c->created_at,
+                'id'              => $c->id,
+                'customer_name'   => $c->customer_name,
+                'customer_type'   => $c->customerType?->label,
+                'status'          => $c->status,
+                'mentor_feedback' => $c->mentor_feedback,
+                'mentor_score'    => $c->mentor_score,
+                'created_at'      => $c->created_at,
             ]);
 
         return response()->json(['conversations' => $conversations]);
@@ -246,6 +249,29 @@ class UserController extends Controller
         }
 
         return response()->json(['status' => 'deleted']);
+    }
+
+    /**
+     * Admin/Mentor: save feedback and score for a student's conversation.
+     */
+    public function conversationFeedback(Request $request, User $user, $conversationId): JsonResponse
+    {
+        if ($err = $this->assertMentorCanAccess($request, $user)) {
+            return $err;
+        }
+
+        $conversation = Conversation::where('id', $conversationId)
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'mentor_feedback' => 'nullable|string',
+            'mentor_score'    => 'nullable|integer|min:0|max:100',
+        ]);
+
+        $conversation->update($validated);
+
+        return response()->json(['conversation' => $conversation]);
     }
 
     /**

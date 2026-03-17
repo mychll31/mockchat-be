@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Conversation extends Model
 {
-    protected $fillable = ['user_id', 'customer_type_id', 'product_id', 'customer_name', 'status'];
+    protected $fillable = ['user_id', 'customer_type_id', 'product_id', 'customer_name', 'status', 'mentor_feedback', 'mentor_score'];
 
     protected $casts = [
         'updated_at' => 'datetime',
+        'mentor_score' => 'integer',
     ];
 
     public function customerType(): BelongsTo
