@@ -129,7 +129,7 @@ class AuthController extends Controller
         }
 
         // Web flow: redirect to SPA callback page with token in query string
-        $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
+        $frontendUrl = config('app.frontend_url', 'http://localhost:5173');
 
         return redirect()->away(
             $frontendUrl . '/auth/callback?token=' . urlencode($token)
