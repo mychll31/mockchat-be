@@ -68,6 +68,7 @@ Route::middleware(['auth:sanctum', 'check.enabled'])->group(function () {
         Route::put('students/{user}/conversations/{conversationId}/feedback', [UserController::class, 'conversationFeedback']);
 
         // Student products
+        Route::post('products/bulk-assign', [UserController::class, 'bulkAssignProducts']);
         Route::get('students/{user}/products', [UserController::class, 'studentProducts']);
         Route::post('students/{user}/products', [UserController::class, 'storeStudentProduct']);
         Route::delete('students/{user}/products/{productId}', [UserController::class, 'destroyStudentProduct']);

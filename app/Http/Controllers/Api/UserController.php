@@ -169,6 +169,46 @@ class UserController extends Controller
     }
 
     /**
+     * Admin/Mentor: bulk-assign products to multiple students.
+     * Copies each selected product to each selected student.
+     */
+    public function bulkAssignProducts(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'product_ids' => 'required|array|min:1',
+            'product_ids.*' => 'exists:products,id',
+            'student_ids' => 'required|array|min:1',
+            'student_ids.*' => 'exists:users,id',
+        ]);
+
+        $products = \App\Models\Product::whereIn('id', $validated['product_ids'])->get();
+        $students = User::whereIn('id', $validated['student_ids'])->where('role', 'student')->get();
+
+        $created = 0;
+        foreach ($students as $student) {
+            foreach ($products as $product) {
+                // Skip if student already has a product with the same name
+                if ($student->products()->where('name', $product->name)->exists()) {
+                    continue;
+                }
+                $student->products()->create([
+                    'name' => $product->name,
+                    'description' => $product->description,
+                    'price' => $product->price,
+                    'category' => $product->category,
+                    'image_url' => $product->image_url,
+                ]);
+                $created++;
+            }
+        }
+
+        return response()->json([
+            'message' => $created . ' products assigned',
+            'created' => $created,
+        ]);
+    }
+
+    /**
      * Admin/Mentor: list a student's LLM settings.
      */
     public function studentLlmSettings(Request $request, User $user): JsonResponse
