@@ -74,6 +74,7 @@ Route::middleware(['auth:sanctum', 'check.enabled'])->group(function () {
         Route::delete('students/{user}/products/{productId}', [UserController::class, 'destroyStudentProduct']);
 
         // Student LLM settings
+        Route::post('llm/bulk-assign', [UserController::class, 'bulkAssignLlmSettings']);
         Route::get('students/{user}/llm', [UserController::class, 'studentLlmSettings']);
         Route::post('students/{user}/llm', [UserController::class, 'storeStudentLlmSetting']);
         Route::delete('students/{user}/llm/{provider}', [UserController::class, 'destroyStudentLlmSetting']);

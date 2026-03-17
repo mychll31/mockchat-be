@@ -209,6 +209,49 @@ class UserController extends Controller
     }
 
     /**
+     * Admin/Mentor: bulk-assign LLM settings to multiple students.
+     * Copies the mentor's own configured LLM settings (by provider) to each selected student.
+     */
+    public function bulkAssignLlmSettings(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'provider_keys'  => 'required|array|min:1',
+            'provider_keys.*' => 'string|in:openai,anthropic,gemini,groq,ollama',
+            'student_ids'    => 'required|array|min:1',
+            'student_ids.*'  => 'exists:users,id',
+        ]);
+
+        $mentor = $request->user();
+        $mentorSettings = $mentor->llmSettings()
+            ->whereIn('provider', $validated['provider_keys'])
+            ->get();
+
+        $students = User::whereIn('id', $validated['student_ids'])
+            ->where('role', 'student')
+            ->get();
+
+        $created = 0;
+        foreach ($students as $student) {
+            foreach ($mentorSettings as $setting) {
+                $student->llmSettings()->updateOrCreate(
+                    ['provider' => $setting->provider],
+                    [
+                        'api_key'    => $setting->getRawOriginal('api_key'),
+                        'model'      => $setting->model,
+                        'is_default' => $setting->is_default,
+                    ]
+                );
+                $created++;
+            }
+        }
+
+        return response()->json([
+            'message' => $created . ' LLM setting(s) assigned',
+            'created' => $created,
+        ]);
+    }
+
+    /**
      * Admin/Mentor: list a student's LLM settings.
      */
     public function studentLlmSettings(Request $request, User $user): JsonResponse
