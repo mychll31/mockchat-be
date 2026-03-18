@@ -146,11 +146,13 @@ class ChatController extends Controller
             'body' => $reply,
         ]);
 
-        $agentBodies = $conversation->messages()->where('sender', 'agent')->orderBy('created_at')->pluck('body')->toArray();
-        $suggestedStage = ChatStageDetection::fromAgentMessages($agentBodies);
+        $allMessages = $conversation->messages()->orderBy('created_at')->get()
+            ->map(fn ($m) => ['sender' => $m->sender, 'body' => $m->body])
+            ->toArray();
+        $suggestedStage = ChatStageDetection::fromConversation($allMessages);
 
         $autoEnded = false;
-        if ($suggestedStage >= 7) {
+        if ($suggestedStage >= 7 && count(array_filter($allMessages, fn ($m) => $m['sender'] === 'agent')) >= 7) {
             $conversation->update(['status' => 'closed']);
             $autoEnded = true;
         }
@@ -183,8 +185,10 @@ class ChatController extends Controller
             return response()->json(['error' => 'Conversation not found'], 404);
         }
 
-        $agentBodies = $conversation->messages()->where('sender', 'agent')->orderBy('created_at')->pluck('body')->toArray();
-        $suggestedStage = ChatStageDetection::fromAgentMessages($agentBodies);
+        $allMessages = $conversation->messages()->orderBy('created_at')->get()
+            ->map(fn ($m) => ['sender' => $m->sender, 'body' => $m->body])
+            ->toArray();
+        $suggestedStage = ChatStageDetection::fromConversation($allMessages);
 
         return response()->json([
             'conversation' => [
