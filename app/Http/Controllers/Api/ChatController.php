@@ -183,6 +183,9 @@ class ChatController extends Controller
             return response()->json(['error' => 'Conversation not found'], 404);
         }
 
+        $agentBodies = $conversation->messages()->where('sender', 'agent')->orderBy('created_at')->pluck('body')->toArray();
+        $suggestedStage = ChatStageDetection::fromAgentMessages($agentBodies);
+
         return response()->json([
             'conversation' => [
                 'id' => $conversation->id,
@@ -191,6 +194,7 @@ class ChatController extends Controller
                 'customer_type' => $conversation->customerType->label,
                 'type_key' => $conversation->customerType->type_key,
                 'product_id' => $conversation->product_id,
+                'suggested_stage' => $suggestedStage,
             ],
         ]);
     }
