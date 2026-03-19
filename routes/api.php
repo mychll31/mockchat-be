@@ -10,11 +10,15 @@ use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 // ---------------------------------------------------------------------------
-// Auth (public)
+// Auth (public) - rate limited to prevent brute force
 // ---------------------------------------------------------------------------
 
-Route::post('auth/register', [AuthController::class, 'register']);
-Route::post('auth/login', [AuthController::class, 'login']);
+Route::middleware('throttle:auth')->group(function () {
+    Route::post('auth/register', [AuthController::class, 'register']);
+    Route::post('auth/login', [AuthController::class, 'login']);
+});
+
+// Google OAuth (no throttle - external redirects)
 Route::get('auth/google', [AuthController::class, 'redirectUrl']);
 Route::get('auth/google/callback', [AuthController::class, 'handleCallback']);
 
@@ -22,12 +26,16 @@ Route::get('auth/google/callback', [AuthController::class, 'handleCallback']);
 // Protected routes (any authenticated, enabled user)
 // ---------------------------------------------------------------------------
 
-Route::middleware(['auth:sanctum', 'check.enabled'])->group(function () {
+Route::middleware(['auth:sanctum', 'check.enabled', 'throttle:api'])->group(function () {
     Route::get('auth/me', [AuthController::class, 'me']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
 
-    Route::get('chat/new', [ChatController::class, 'newConversation']);
-    Route::post('chat/send', [ChatController::class, 'sendMessage']);
+    Route::middleware('throttle:chat-new')->group(function () {
+        Route::get('chat/new', [ChatController::class, 'newConversation']);
+    });
+    Route::middleware('throttle:chat-send')->group(function () {
+        Route::post('chat/send', [ChatController::class, 'sendMessage']);
+    });
     Route::get('chat/messages', [ChatController::class, 'getMessages']);
     Route::get('chat/conversation', [ChatController::class, 'getConversation']);
     Route::post('chat/end', [ChatController::class, 'endConversation']);
@@ -85,7 +93,7 @@ Route::middleware(['auth:sanctum', 'check.enabled'])->group(function () {
 // Campaigns (Admin/Mentor)
 // ---------------------------------------------------------------------------
 
-Route::middleware(['auth:sanctum', 'check.enabled', 'role:admin,mentor'])->prefix('campaigns')->group(function () {
+Route::middleware(['auth:sanctum', 'check.enabled', 'throttle:api', 'role:admin,mentor'])->prefix('campaigns')->group(function () {
     Route::get('/', [CampaignController::class, 'index']);
     Route::post('/', [CampaignController::class, 'store']);
     Route::get('/{campaign}', [CampaignController::class, 'show']);
@@ -99,7 +107,7 @@ Route::middleware(['auth:sanctum', 'check.enabled', 'role:admin,mentor'])->prefi
 // Campaign Groups (Admin/Mentor)
 // ---------------------------------------------------------------------------
 
-Route::middleware(['auth:sanctum', 'check.enabled', 'role:admin,mentor'])->prefix('campaign-groups')->group(function () {
+Route::middleware(['auth:sanctum', 'check.enabled', 'throttle:api', 'role:admin,mentor'])->prefix('campaign-groups')->group(function () {
     Route::get('/', [CampaignController::class, 'groupIndex']);
     Route::post('/', [CampaignController::class, 'groupStore']);
     Route::put('/{campaignGroup}', [CampaignController::class, 'groupUpdate']);
@@ -111,7 +119,7 @@ Route::middleware(['auth:sanctum', 'check.enabled', 'role:admin,mentor'])->prefi
 // Assignments (Admin/Mentor)
 // ---------------------------------------------------------------------------
 
-Route::middleware(['auth:sanctum', 'check.enabled', 'role:admin,mentor'])->prefix('assignments')->group(function () {
+Route::middleware(['auth:sanctum', 'check.enabled', 'throttle:api', 'role:admin,mentor'])->prefix('assignments')->group(function () {
     Route::post('/', [CampaignController::class, 'assignmentStore']);
     Route::get('/', [CampaignController::class, 'assignmentIndex']);
     Route::put('/{assignment}/feedback', [CampaignController::class, 'assignmentFeedback']);
@@ -121,7 +129,7 @@ Route::middleware(['auth:sanctum', 'check.enabled', 'role:admin,mentor'])->prefi
 // Student Campaign Assignments
 // ---------------------------------------------------------------------------
 
-Route::middleware(['auth:sanctum', 'check.enabled'])->prefix('student')->group(function () {
+Route::middleware(['auth:sanctum', 'check.enabled', 'throttle:api'])->prefix('student')->group(function () {
     Route::get('/assignments', [CampaignController::class, 'studentAssignments']);
     Route::get('/assignments/{assignment}', [CampaignController::class, 'studentAssignmentShow']);
     Route::post('/assignments/{assignment}/decide', [CampaignController::class, 'studentDecide']);
