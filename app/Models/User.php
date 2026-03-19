@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Notifications\ResetPasswordNotification;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -61,5 +62,13 @@ class User extends Authenticatable
     public function campaignAssignments(): HasMany
     {
         return $this->hasMany(CampaignAssignment::class, 'student_id');
+    }
+
+    /**
+     * Send the password reset notification with a custom frontend URL.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordNotification($token));
     }
 }
