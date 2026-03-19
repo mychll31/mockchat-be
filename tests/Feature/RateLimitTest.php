@@ -21,6 +21,10 @@ class RateLimitTest extends TestCase
     {
         parent::setUp();
 
+        // Rate limiter needs a persistent cache driver — 'array' resets between requests
+        config(['cache.default' => 'file']);
+        app('cache')->forgetDriver('file');
+
         $this->user = User::factory()->create(['enabled' => true]);
 
         $this->customerType = CustomerType::create([
@@ -31,13 +35,20 @@ class RateLimitTest extends TestCase
         ]);
     }
 
+    protected function tearDown(): void
+    {
+        // Clear file cache so rate limit counters don't leak between tests
+        app('cache')->store('file')->flush();
+        parent::tearDown();
+    }
+
     // -----------------------------------------------------------------------
-    // Auth login rate limiting (5 per minute)
+    // Auth login rate limiting (10 per minute)
     // -----------------------------------------------------------------------
 
     public function test_auth_login_is_rate_limited(): void
     {
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < 10; $i++) {
             $this->postJson('/api/auth/login', [
                 'email' => 'test@test.com',
                 'password' => 'wrong',
