@@ -102,6 +102,7 @@ class ChatController extends Controller
 
         $conversation = Conversation::with(['customerType', 'product'])
             ->where('id', $request->conversation_id)
+            ->where('user_id', $request->user()->id)
             ->where('status', 'active')
             ->first();
 
@@ -109,7 +110,7 @@ class ChatController extends Controller
             return response()->json(['error' => 'Conversation not found or already closed'], 404);
         }
 
-        $body = trim($request->message);
+        $body = trim(strip_tags($request->message));
 
         Message::create([
             'conversation_id' => $conversation->id,
@@ -168,6 +169,14 @@ class ChatController extends Controller
     public function getMessages(Request $request): JsonResponse
     {
         $conversationId = (int) $request->query('conversation_id');
+        $conversation = Conversation::where('id', $conversationId)
+            ->where('user_id', $request->user()->id)
+            ->first();
+
+        if (!$conversation) {
+            return response()->json(['error' => 'Conversation not found'], 404);
+        }
+
         $messages = Message::where('conversation_id', $conversationId)
             ->orderBy('created_at')
             ->get(['id', 'sender', 'body', 'created_at']);
@@ -179,7 +188,9 @@ class ChatController extends Controller
     {
         $conversationId = (int) $request->query('conversation_id');
         $conversation = Conversation::with('customerType')
-            ->find($conversationId);
+            ->where('id', $conversationId)
+            ->where('user_id', $request->user()->id)
+            ->first();
 
         if (!$conversation) {
             return response()->json(['error' => 'Conversation not found'], 404);
@@ -207,7 +218,9 @@ class ChatController extends Controller
     {
         $request->validate(['conversation_id' => 'required|integer']);
 
-        Conversation::where('id', $request->conversation_id)->update(['status' => 'closed']);
+        Conversation::where('id', $request->conversation_id)
+            ->where('user_id', $request->user()->id)
+            ->update(['status' => 'closed']);
 
         return response()->json(['status' => 'closed']);
     }

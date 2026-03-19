@@ -8,7 +8,9 @@ class UpdateProductRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        $product = $this->route('product');
+
+        return $product && $product->user_id === $this->user()->id;
     }
 
     public function rules(): array

@@ -181,8 +181,17 @@ class UserController extends Controller
             'student_ids.*' => 'exists:users,id',
         ]);
 
-        $products = \App\Models\Product::whereIn('id', $validated['product_ids'])->get();
+        // Only allow copying products owned by the authenticated user
+        $products = \App\Models\Product::whereIn('id', $validated['product_ids'])
+            ->where('user_id', $request->user()->id)
+            ->get();
+
+        // Only allow assigning to users with role=student
         $students = User::whereIn('id', $validated['student_ids'])->where('role', 'student')->get();
+
+        if ($students->isEmpty()) {
+            return response()->json(['error' => 'No valid students found in the provided IDs.'], 422);
+        }
 
         $created = 0;
         foreach ($students as $student) {
@@ -226,9 +235,14 @@ class UserController extends Controller
             ->whereIn('provider', $validated['provider_keys'])
             ->get();
 
+        // Only allow assigning to users with role=student
         $students = User::whereIn('id', $validated['student_ids'])
             ->where('role', 'student')
             ->get();
+
+        if ($students->isEmpty()) {
+            return response()->json(['error' => 'No valid students found in the provided IDs.'], 422);
+        }
 
         $created = 0;
         foreach ($students as $student) {

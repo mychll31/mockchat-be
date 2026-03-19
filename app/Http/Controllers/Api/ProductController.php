@@ -38,8 +38,12 @@ class ProductController extends Controller
         ], 201);
     }
 
-    public function show(Product $product): JsonResponse
+    public function show(Request $request, Product $product): JsonResponse
     {
+        if ($product->user_id !== $request->user()->id) {
+            return response()->json(['error' => 'Unauthorized.'], 403);
+        }
+
         return response()->json([
             'product' => new ProductResource($product),
         ]);
@@ -47,6 +51,10 @@ class ProductController extends Controller
 
     public function update(UpdateProductRequest $request, Product $product): JsonResponse
     {
+        if ($product->user_id !== $request->user()->id) {
+            return response()->json(['error' => 'Unauthorized.'], 403);
+        }
+
         $product->update($request->validated());
 
         return response()->json([
@@ -54,8 +62,12 @@ class ProductController extends Controller
         ]);
     }
 
-    public function destroy(Product $product): JsonResponse
+    public function destroy(Request $request, Product $product): JsonResponse
     {
+        if ($product->user_id !== $request->user()->id) {
+            return response()->json(['error' => 'Unauthorized.'], 403);
+        }
+
         $product->delete();
 
         return response()->json(['status' => 'deleted']);

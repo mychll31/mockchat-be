@@ -131,13 +131,14 @@ class AuthController extends Controller
         // Web flow: redirect to SPA callback page with token in query string
         $frontendUrl = config('app.frontend_url', 'http://localhost:5173');
 
+        // Role is intentionally omitted from the redirect URL to prevent tampering.
+        // The frontend must fetch the role from the authenticated /auth/me endpoint.
         return redirect()->away(
             $frontendUrl . '/auth/callback?token=' . urlencode($token)
             . '&user_id=' . $user->id
             . '&name=' . urlencode($user->name)
             . '&email=' . urlencode($user->email ?? '')
             . '&avatar=' . urlencode($user->avatar ?? '')
-            . '&role=' . urlencode($user->role ?? 'student')
         );
     }
 
