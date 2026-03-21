@@ -18,6 +18,7 @@ Route::middleware('throttle:auth')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login']);
     Route::post('auth/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('auth/reset-password', [AuthController::class, 'resetPassword']);
+    Route::post('auth/delete-account', [AuthController::class, 'deleteAccount']);
 });
 
 // Google OAuth (no throttle - external redirects)

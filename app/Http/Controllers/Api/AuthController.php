@@ -210,4 +210,34 @@ class AuthController extends Controller
 
         return response()->json(['error' => __($status)], 422);
     }
+
+    /**
+     * Permanently delete a user account and all associated data.
+     */
+    public function deleteAccount(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email'    => 'required|email',
+            'password' => 'required|string',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (! $user || ! Hash::check($request->password, $user->password)) {
+            return response()->json(['error' => 'Invalid email or password.'], 401);
+        }
+
+        // Delete all related data
+        $user->tokens()->delete();
+        $user->conversations()->each(function ($conv) {
+            $conv->messages()->delete();
+            $conv->delete();
+        });
+        $user->products()->delete();
+        $user->llmSettings()->delete();
+        $user->campaignAssignments()->delete();
+        $user->delete();
+
+        return response()->json(['status' => 'Account deleted successfully.']);
+    }
 }
